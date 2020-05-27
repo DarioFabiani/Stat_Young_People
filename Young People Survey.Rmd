@@ -1,0 +1,87 @@
+---
+title: "Young People Survey"
+author: "Dario Fabiani, Beatrice Marsili"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+The purpose of this project is to analyze with different statistical methods the Young People Survey dataset (available at https://www.kaggle.com/miroslavsabo/young-people-survey).  
+This dataset includes 1010 observations for 150 different varibles. It has been built over a questionary answered by Slovakian people aged between 15 and 30.  
+Those people were asked to respond questions regarding their Music and Movies preferences, their Hobbies and Phobias, their Spending and Health Habits, some of their Demographic characteristics and their thoughts about life.  
+57 over 150 questions regarded this latter topic, thus we decided to try finding some patterns between those variables in order to utilze them in an aggregated way.  
+We first had a look to those 57 questions and tried to understand which characteristics of personality were observed by each variable simply using the Myers-Briggs indicator, often used in psichology. Obviously this method was very rough as was strictly dependant on our personal thoughts and could lead to misleading results. We then went through a cluster analysis. 
+
+## Data Preparation
+Our data was already technically correct. We renamed columns to avoid problems in handling them. 
+
+```{r Column Rename}
+library(stringr) 
+df.responses <- read.csv("Data/responses.csv")
+old <- names(df.responses)
+new <- str_replace_all(old, "\\.", "_") 
+new <- str_replace_all(new, "\\__", "_or_")  
+new <- str_replace_all(new, "\\__", "_") 
+colnames(df.responses) <- new
+attach(df.responses)
+```
+We had to decide how to deal with NAs, that were the only special values in our dataset. 
+
+```{r Na Values}
+omit <- na.omit(df.responses)
+dim(df.responses)[1] - dim(omit)[1]
+```
+Having 324 rows with Na values we decided that it wasn't a good idea to omit them, we then decided to fill those missing values with the median of the column. 
+We choose to use the median as the variables are of ordered categorical type and choosing the mean would have changed the levels of our parameters.  
+We filled Na values for the variables referred to Music, Movies, and Hobbies and for the ones referred to Personality.  
+
+```{r Filling Na for preferences}
+pref <- colnames(df.responses[0:63]) #columns for Music, Movies and Hobbies preferences
+for(i in 1:length(pref)){
+  df.responses[is.na(df.responses[,i]), i] <- median(df.responses[,i], na.rm = TRUE)
+}
+```
+To handle properly the dataset we divided it into subsets.  
+```{r Dividing into subsets and filling Na of personality}
+df.music <- data.frame(df.responses[0:19])
+df.movies <- data.frame(df.responses[20:31])
+df.hobbies <- data.frame(df.responses[32:63])
+df.phobias <- data.frame(df.responses[64:73])
+df.health <- data.frame(df.responses[74:76])
+df.personality <- data.frame(df.responses[77:133])
+df.spending <- data.frame(df.responses[134:140])
+df.demo <- data.frame(df.responses[140:150])
+
+personality.nona <- df.personality[, -c(32, 33, 57)]  
+pers <- colnames(personality.nona)
+
+for(i in 1:length(pers)){
+  personality.nona[is.na(personality.nona[,i]), i] <- median(personality.nona[,i], na.rm = TRUE)
+}
+
+df.responses[77:133] <- personality.nona
+```
+Before clustering our variables regarding personality we wanted to visualize possible correlation inside this subset and then we performed a correlation plot, that confirmed that there are some (positive and negative) patterns among the responses on such variables. 
+#QUESTO INTANTO L'HO MESSO AL MASSIMO LO LEVIAMO 
+```{r Visually exploring correlations for personality}
+library(corrplot)
+library(RColorBrewer)
+
+corrplot(cor(df.personality[, -c(32, 33, 57)], use = "complete.obs"), 
+         type= "upper",
+         method ="circle",
+         col = brewer.pal(n = 5, name = "Spectral"),
+         tl.cex = 0.38,
+         tl.col = "olivedrab4",
+         tl.srt = 45,
+         mar = c(2, 2, 2, 2), 
+         main = "Correlation plot among personality variables")
+```
+
+## Clustering 
+
+
+
