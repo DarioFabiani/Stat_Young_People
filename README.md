@@ -4,3 +4,4 @@ Statistical project
 From now on we can work on the same file w/o problem.
 
 Say Hi Bibi! :D
+Hi Dario! 
