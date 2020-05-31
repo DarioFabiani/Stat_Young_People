@@ -1,0 +1,157 @@
+---
+title: "Secondary markdown"
+subtitle: Statistical Models
+author: "Dario Fabiani, Beatrice Marsili"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(stringr) 
+df.responses <- read.csv("Data/responses.csv")
+old <- names(df.responses)
+new <- str_replace_all(old, "\\.", "_") 
+new <- str_replace_all(new, "\\__", "_or_")  
+new <- str_replace_all(new, "\\__", "_") 
+colnames(df.responses) <- new
+pref <- colnames(df.responses[0:63]) #columns for Music, Movies and Hobbies preferences
+for(i in 1:length(pref)){
+  df.responses[is.na(df.responses[,i]), i] <- median(df.responses[,i], na.rm = TRUE)
+}
+
+attach(df.responses)
+
+df.music <- data.frame(df.responses[0:19])
+df.movies <- data.frame(df.responses[20:31])
+df.hobbies <- data.frame(df.responses[32:63])
+df.phobias <- data.frame(df.responses[64:73])
+df.health <- data.frame(df.responses[74:76])
+df.personality <- data.frame(df.responses[77:133])
+df.spending <- data.frame(df.responses[134:140])
+df.demo <- data.frame(df.responses[140:150])
+
+df.personality$Punctuality <- as.numeric(df.personality$Punctuality)
+df.personality$Lying <- as.numeric(df.personality$Lying)
+df.personality$Internet_usage <- as.numeric(df.personality$Internet_usage)
+
+pers <- colnames(df.personality)
+
+for(i in 1:length(pers)){
+  df.personality[is.na(df.personality[,i]), i] <- 3
+}
+
+df.responses[77:133] <- df.personality
+```
+
+## UNINFORMATIVE PCAS
+
+```{r PCA for movies, message=FALSE, fig.align="center"}
+library(ggplot2)
+library(factoextra)
+library(gridExtra)
+
+pca.movies <- prcomp(df.movies, scale = TRUE,)
+pca.movies$rotation <- -pca.movies$rotation
+pca.movies$x <- -pca.movies$x
+
+fviz_pca_var(pca.movies,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, 
+             title="PCA for Movies Preferences"
+)
+```
+
+```{r Scree Plot and Cumulative Variance Explained Visualization (Movies), fig.align="center"}
+pv.movies <- pca.movies$sdev^2 
+pvp.movies <- pv.movies/sum(pv.movies)
+
+mov <- fviz_eig(pca.movies,
+         addlabels = T, 
+         barcolor = "#E7B800", 
+         barfill = "#E7B800", 
+         linecolor = "#00AFBB", 
+         choice = "variance",
+         title = "Scree Plot - Movies") 
+
+mov.cumsum <- data.frame(x=1:length(pvp.movies),
+                 y=cumsum(pvp.movies)*100/4)
+mov.tot <- mov  + 
+     geom_point(data=mov.cumsum, aes(x, y), size=1, color="#00AFBB") +
+     geom_line(data=mov.cumsum, aes(x, y), color="#00AFBB") +
+     scale_y_continuous(sec.axis = sec_axis(~ . * 4, 
+                                   name = "Cumulative proportion of Variance Explained") )
+print(mov.tot)
+```
+
+```{r}
+pca.music <- prcomp(df.music, scale = TRUE,)
+pca.music$rotation <- -pca.music$rotation
+pca.music$x <- -pca.music$x
+
+fviz_pca_var(pca.music,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, 
+             title="PCA for Music Preferences"
+)
+```
+
+```{r}
+pv.music <- pca.music$sdev^2 
+pvp.music <- pv.music/sum(pv.music)
+
+mus <- fviz_eig(pca.music,
+         addlabels = T, 
+         barcolor = "#E7B800", 
+         barfill = "#E7B800", 
+         linecolor = "#00AFBB", 
+         choice = "variance",
+         title = "Scree Plot - Music") 
+
+mus.cumsum <- data.frame(x=1:length(pvp.music),
+                 y=cumsum(pvp.music)*100/4)
+mus.tot <- mus  + 
+     geom_point(data=mus.cumsum, aes(x, y), size=1, color="#00AFBB") +
+     geom_line(data=mus.cumsum, aes(x, y), color="#00AFBB") +
+     scale_y_continuous(sec.axis = sec_axis(~ . * 4, 
+                                   name = "Cumulative proportion of Variance Explained") )
+print(mus.tot)
+```
+```{r}
+pca.hobbies <- prcomp(df.hobbies, scale = TRUE,)
+pca.hobbies$rotation <- -pca.hobbies$rotation
+pca.hobbies$x <- -pca.hobbies$x
+
+fviz_pca_var(pca.hobbies,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, 
+             title="PCA for Hobbies"
+)
+```
+```{r}
+pv.hobbies <- pca.hobbies$sdev^2 
+pvp.hobbies <- pv.hobbies/sum(pv.hobbies)
+
+hob <- fviz_eig(pca.hobbies,
+         addlabels = T, 
+         barcolor = "#E7B800", 
+         barfill = "#E7B800", 
+         linecolor = "#00AFBB", 
+         choice = "variance",
+         title = "Scree Plot - Hobbies") 
+
+hob.cumsum <- data.frame(x=1:length(pvp.hobbies),
+                 y=cumsum(pvp.hobbies)*100/4)
+hob.tot <- hob  + 
+     geom_point(data=hob.cumsum, aes(x, y), size=1, color="#00AFBB") +
+     geom_line(data=hob.cumsum, aes(x, y), color="#00AFBB") +
+     scale_y_continuous(sec.axis = sec_axis(~ . * 4, 
+                                   name = "Cumulative proportion of Variance Explained") )
+print(hob.tot)
+```
+
