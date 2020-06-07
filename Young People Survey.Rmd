@@ -1,0 +1,418 @@
+---
+title: "Young People Survey"
+author: "Dario Fabiani, Beatrice Marsili"
+subtitle: Statistical Models
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Abstract
+The purpose of this project is to analyze with different statistical methods the Young People Survey dataset (available at [Kaggle][1]).  
+This dataset includes 1010 observations for 150 different varibles. It has been built over a questionary answered by Slovakian people aged between 15 and 30.  
+These people were asked to respond questions regarding their Music and Movies preferences, their Hobbies and Phobias, their Spending and Health Habits, some of their Demographic characteristics and their thoughts about life.  
+All variables in the survey are Likert Scales, which mean that the values should be considered as ordered factors, given that we cannot considered the various levels as distant as two integer could be; given that the purpose of this analysis is to apply different statistical methods, we decided, at least for the preprocessing and expoloration phases, to consider our variables as continous. We fount evidence that this approach is commonly used in social sciences (for instance, [here][2] ) when the likert scales are used to find different groups of partecipants, that is the scope of the first part of our work. Before proceeding with regression and classification we transformed the variables in the correct type: ordered factors.  
+57 over 150 questions regarded personality traits and views about life, thus we decided to try finding some patterns between these features, in order to utilze them to try predicting spending habits and other preferences expressed in the survey.   
+We're in the scenario of *unsupervised learning*, as we have a set of $X_{1}, X_{2}, \dots, X_{57}$ features measured over 1010 observations, and we want to discover unknown subgroups within these features.We first had a look to these 57 questions and tried to understand which characteristics of personality were observed by each variable, simply using the Myers-Briggs indicator, often used in psichology. Obviously this method was very rough as was strictly dependant on our personal thoughts and could lead to misleading results.  We then went through a cluster analysis, a set of techniques that help discover hidden structures on the basis of a dataset.  We visually identified 5 different clusters connected through a reasonably low height and assigned 5 scores to each observation, these scores are computed with the mean of the variables in each cluster and represent the proportion in which the observation belongs to a certain cluster.   We then performed a Principal Component Analysis on the variables referred to Spending Habits and the ones referred to Phobias to have few components that could summarize tendencies. 
+
+
+## Data Preparation
+Our data was already technically correct. We renamed columns to avoid problems in handling them. 
+```{r Column Rename, echo=FALSE}
+library(stringr) 
+df.responses <- read.csv("Data/responses.csv")
+old <- names(df.responses)
+new <- str_replace_all(old, "\\.", "_") 
+new <- str_replace_all(new, "\\__", "_or_")  
+new <- str_replace_all(new, "\\__", "_") 
+colnames(df.responses) <- new
+```
+We had to decide how to deal with NAs, that were the only special values in our dataset. 
+```{r Na Values}
+omit <- na.omit(df.responses)
+dim(df.responses)[1] - dim(omit)[1]
+```
+Having 324 rows with NA values we decided that it wasn't a good idea to omit them, we then decided to fill those missing values with the median of the column. 
+We choose to use the median as the variables are of ordered categorical type and choosing the mean would have changed the levels of our parameters.  
+We first transformed the non numerical values into numerical ones to correctly handle NA.
+```{r Filling Na for preferences and transforming non numeric values, message = FALSE, echo=FALSE}
+library(dplyr)
+non.numeric <- colnames(df.responses %>% select_if(~!is.numeric(.x)))
+
+df.responses$Smoking <- as.numeric(df.responses$Smoking)
+df.responses$Alcohol <- as.numeric(df.responses$Alcohol)
+df.responses$Gender <- as.numeric(df.responses$Gender)
+df.responses$Left_or_right_handed<- as.numeric(df.responses$Left_or_right_handed)
+df.responses$Education <- as.numeric(df.responses$Education)
+df.responses$Only_child <- as.numeric(df.responses$Only_child)
+df.responses$Village_or_town <- as.numeric(df.responses$Village_or_town)
+df.responses$House_or_block_of_flats <- as.numeric(df.responses$House_or_block_of_flats)
+df.responses$Punctuality <- as.numeric(df.responses$Punctuality)
+df.responses$Lying <- as.numeric(df.responses$Lying)
+df.responses$Internet_usage <- as.numeric(df.responses$Internet_usage)
+```
+To handle properly the dataset we divided it into subsets.
+Looking at the data referred to personality questions we preferred to substitute missing values with *"3"*, as using the median as for the rest of the dataset would have affected correlation. 
+```{r Dividing into subsets and filling Na, echo=FALSE}
+pref <- colnames(df.responses[0:76]) #columns for Music, Movies, Hobbies preferences, Phobias and Health habits
+for(i in 1:length(pref)){
+  df.responses[is.na(df.responses[,i]), i] <- median(df.responses[,i], na.rm = TRUE)
+}
+
+df.music <- data.frame(df.responses[0:19])
+df.movies <- data.frame(df.responses[20:31])
+df.hobbies <- data.frame(df.responses[32:63])
+df.phobias <- data.frame(df.responses[64:73])
+df.health <- data.frame(df.responses[74:76])
+df.personality <- data.frame(df.responses[77:133])
+df.spending <- data.frame(df.responses[134:140])
+df.demo <- data.frame(df.responses[141:150])
+
+spend <- colnames(df.spending) #Spending Habits
+for(i in 1:length(spend)){
+  df.spending[is.na(df.spending[,i]), i] <- median(df.spending[,i], na.rm = TRUE)
+}
+df.responses[134:140] <- df.spending
+
+dem <- colnames(df.demo)  #Demographic
+for(i in 1:length(dem)){
+  df.demo[is.na(df.demo[,i]), i] <- median(df.demo[,i], na.rm = TRUE)
+}
+df.responses[141:150] <- df.demo
+
+pers <- colnames(df.personality)
+for(i in 1:length(pers)){
+  df.personality[is.na(df.personality[,i]), i] <- 3
+}
+df.responses[77:133] <- df.personality
+```
+
+Before clustering our variables regarding personality to find possible personality types we wanted to visualize existing correlation inside this subset; we then  performed a correlation matrix and a correlation plot, that confirmed that there are some (positive and negative) patterns among the responses on such variables. 
+```{r results="hide"}
+cor(df.personality)
+```
+#QUESTO INTANTO L'HO MESSO AL MASSIMO LO LEVIAMO   
+```{r Visually exploring correlations for personality, message=FALSE, fig.align="center", echo=FALSE}
+library(corrplot)
+library(RColorBrewer)
+pal <- colorRampPalette(c("#FC4E07", "#E7B800", "#00AFBB"))
+corrplot(cor(df.personality, use = "complete.obs"), 
+           method= "circle", 
+           type= "upper",
+         col = pal(5),
+         tl.cex = 0.38,
+         tl.col = "#f08200",
+         tl.srt = 45,
+         mar = c(2, 2, 2, 2), 
+         main = "Correlation plot among personality variables",
+         cex.main= 0.8,
+         font.main=1,
+         col.main="black")
+```
+  
+## Hierarchical Clustering  
+Even if we had some ideas about the number of clusters to be obtained (on the basis of the rough analysis done with Myers-Briggs indicator) we decided to use a **Hierarchical Cluster**, without definig *a priori* the number of cluster to be obtained.  
+Considering the types of our features, ordered categorical, we decided to use as a **measure of distance** a *correlation based* one, as using the classical *Euclidean distance* would have been meaningless. Furthermore, the *Euclidean distance* would have tried to discover patterns among the observation, while we are interested in patterns among the features.  As **linkage** method, after having a look at the results obtained with *Average, Complete and Single* linkage methods we decided to use the *Ward* one, that considers, merging two cluster A and B, the measure of how much the sum of squares would increase when merging them and minimizes this measure, called **merging cost**. 
+```{r Ward method based clustering and visualization, fig.height=13, fig.align="center", echo= FALSE, message=FALSE}
+library(factoextra)
+library(ggplot2)
+library(gridExtra)
+hc.ward <- hclust(as.dist(1-cor(df.personality)), method = "ward.D2")
+dend <- fviz_dend(hc.ward, main = "Ward Linkage - Personality", cex = .5, lwd = 0.4, horiz = T)
+cut.dend<- fviz_dend(hc.ward, main=NULL, 
+          cex = .5,  
+          lwd = 0.4,
+          k = 5, 
+          color_labels_by_k = TRUE, 
+          rect = T, 
+          k_colors = c("#FC4E07", "#E7B800", "#00AFBB", "#f08200", "#74b358"), horiz = T)
+
+
+grid.arrange(dend, cut.dend, nrow=2)
+```
+Looking at the result *(above figure)* we decided to cut our dendogram to obtain 5 clusters *(bottom figure)*, we then added 5 columns to the dataset, one for each cluster, and filled the values with scores obtained by each observation as a mean of the responses given to the variables belonging to the different clusters. 
+```{r cluster columns, fig.dim=c(10,8), fig.align="center", echo=FALSE}
+ward.cut <- cutree(hc.ward, k=5)
+
+df.responses$Cluster_1 <- NA
+df.responses$Cluster_2 <- NA
+df.responses$Cluster_3 <- NA
+df.responses$Cluster_4 <- NA
+df.responses$Cluster_5 <- NA
+
+cl_1 <- names(ward.cut[ward.cut==1])
+cl_2 <- names(ward.cut[ward.cut==2])
+cl_3 <- names(ward.cut[ward.cut==3])
+cl_4 <- names(ward.cut[ward.cut==4])
+cl_5 <- names(ward.cut[ward.cut==5])
+
+df.responses$Cluster_1 <- round(rowMeans(df.responses[cl_1]),2)
+df.responses$Cluster_2 <- round(rowMeans(df.responses[cl_2]),2)
+df.responses$Cluster_3<- round(rowMeans(df.responses[cl_3]),2)
+df.responses$Cluster_4 <- round(rowMeans(df.responses[cl_4]),2)
+df.responses$Cluster_5 <- round(rowMeans(df.responses[cl_5]),2)
+```
+## Principal Component Analysis
+Since our dataset has a lot of variables we performed a PCA on the different datasets realised dividing the origianl one in different topics. We decided to perform separated analysis for each topic beacuse we wanted to keep as much information as possible.  
+For completeness we also performed a PCA on the entire dataset, that can be fount in the secondary markdown. Given the large dimension of the dataset the results are obviously not satifying. We find the elbow after the third component, and the cumulative sum of variance explained by these first three PCs is equal to 16,2% of the total variance.  
+Unfortunatly the principal component analysis for the majority of our subsets is not very informative as well. As can be seen in the secondary submitted markdown, for the Movies preferences, for instance, we should use 8 component out of the 10 original ones to explain the 80% of the variance.  
+For our research constraint, by the way, we are mainly interested in the spending habits, and for this subset the results are quite better: 4 components explain the 80% of the total variance. The elbow appears to be after the first component, that taken alone explains 36,2% of the variance. We could think of taking this first one and the second as they're quite representative (more than 50% of the variance) or the first three (66,42%). Below we have the loadings of the variables on the various PC and a visualization of our results.  
+```{r PCA for Spending Habits, message=FALSE, fig.align="center"}
+pca.spending <- prcomp(df.spending[-c(8:12)], scale = TRUE,)
+pv.spending <- pca.spending$sdev^2 
+pvp.spending <- pv.spending/sum(pv.spending)
+
+pca.spending$rotation
+```
+
+```{r PCA Visualization (Spending Habits), fig.align="center", message=FALSE, echo=FALSE}
+library(gridExtra)
+library(factoextra)
+library(ggplot2)
+spe.var<- fviz_pca_var(pca.spending,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, 
+             title="PCA for Spending Habits", 
+             legend = "bottom")+ theme(plot.margin = unit(c(0, 1, 0, 0), "cm"))
+spe <- fviz_eig(pca.spending,
+         addlabels = T, 
+         barcolor = "#E7B800", 
+         barfill = "#E7B800", 
+         linecolor = "#00AFBB", 
+         choice = "variance",
+         title = "Scree Plot - Spending Habits",
+         ylab = "Percentage of explained Variance",
+         ylim=c(0,45)) + theme(plot.margin = unit(c(0, 0, 0, 1),"cm"))
+
+spe.cumsum <- data.frame(x=1:length(pvp.spending),
+                 y=cumsum(pvp.spending)*100/4)
+spe.tot <- spe  + 
+     geom_point(data=spe.cumsum, aes(x, y), size=1, color="#FC4E07") +
+     geom_line(data=spe.cumsum, aes(x, y), color="#FC4E07") +
+     scale_y_continuous(sec.axis = sec_axis(~ . * 4, 
+                                   name = "Cumulative proportion of Explained Variance") )
+
+
+grid.arrange(spe.var, spe.tot, nrow = 1)
+```
+Looking at the scores that the features have into the first two components we arrived to an interesting interpretation: the first component summarizes the tendency to save or not save money while the second one mainly describes the inclination to spending on entertainment goods. For this reason we decided to keep into account just these two new features.  
+
+Another PCA that is quite interesting in our dataset is the one performed on the variables related to Phobias. As can be seen from the results reported below *(chunck 14)* we find that in the PCs obtained linearly combining our variables, there are some clear patterns. In the first component, in fact, almost all the variables have the same weight (with an exception for *Fear of Public Speaking* and *Fear of Ageing*, that have small weights in all of the components, leading us to the conclusion that the population that responded the questionary is not concerned by these topics), and this component can be thus considered as the tendence to have or not having fears in general. We also noticed that in several components there is a quite strong difference in the weights given to more physical fears (such as the ones connected to animals) and the ones given to more existential phobias (such as the *Fear of Darkness*, *Fear of Heights*...), the first two components are quite representative of these tendences.
+**For this reason we decided to try interpret this tendences with another research constraint: "Can we try to associate different typologies of fears to the different type of personalities we obtained with clustering methods?"**.  
+Before starting the actual analysis we visualized the correlation among these variables and the supramentioned patterns are quite clear.
+```{r Phobias correlation Visualization, echo=FALSE}
+pal <- colorRampPalette(c("#FC4E07", "#E7B800", "#00AFBB"))
+
+corrplot(cor(df.phobias, use = "complete.obs"), 
+         type= "upper",
+         method ="circle",
+         col = pal(5),
+         tl.cex = 0.38,
+         tl.col = "black",
+         tl.srt = 45,
+         mar = c(2, 2, 2, 2), 
+         main = "Correlation plot among phobias variables",
+         cex.main= 0.6,
+         col.main="black")
+```
+
+```{r PCA Phobias, fig.align="center"}
+pca.phobias <- prcomp(df.phobias, scale = TRUE,)
+pca.phobias$rotation
+```
+```{r PCA Phobias Visualization, fig.align="center", echo=FALSE}
+phob.var <- fviz_pca_var(pca.phobias,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, 
+             title="PCA for Phobias", legend="bottom"
+) + theme(plot.margin = unit(c(0, 1, 0, 0), "cm"))
+
+pv.phobias <- pca.phobias$sdev^2 
+pvp.phobias <- pv.phobias/sum(pv.phobias)
+
+phob <- fviz_eig(pca.phobias,
+         addlabels = T, 
+         barcolor = "#E7B800", 
+         barfill = "#E7B800", 
+         linecolor = "#00AFBB", 
+         choice = "variance",
+         title = "Scree Plot - Phobias") 
+
+phob.cumsum <- data.frame(x=1:length(pvp.phobias),
+                 y=cumsum(pvp.phobias)*100/4)
+phob.tot <- phob  + 
+     geom_point(data=phob.cumsum, aes(x, y), size=1, color="#FC4E07") +
+     geom_line(data=phob.cumsum, aes(x, y), color="#FC4E07") +
+     scale_y_continuous(sec.axis = sec_axis(~ . * 4, 
+                                   name = "Cumulative proportion of Variance Explained") ) +
+  theme(plot.margin = unit(c(0, 0, 0, 1), "cm"))
+
+
+grid.arrange(phob.var, phob.tot, nrow = 1)
+```
+  
+## Regression  
+Now that we have our clusters that try to describe different types of personalities we tried to use regression methods to respond to our main research constraint: *"It is possible to try predicting spending habits on the basis of different types of personalities?"*.  
+From now on we will transform our variabels into ordered factors with 5 levels, where 1 correnspond to "Strongly Disagree" and 5 corresponds to "Strongly Agree". We then divided the dataset into training and testing subset and then started performing *Ordinal Logistic Regression* with the variables referred to Spending Habits as Responses and the cluster obtained from the features referred to personality traits as Predictors.
+
+```{r Ordinal Logistic Regression - Finance, message=F}
+library(leaps)
+library(glmnet)
+library(MASS)
+for (name in colnames(df.responses[-c(140:155)])){
+  df.responses[,name] <- factor(df.responses[,name], levels = c("1", "2", "3", "4", "5"), ordered = T)
+}
+
+set.seed(5)
+trainingRows <- sample(1:nrow(df.responses), 0.7 * nrow(df.responses))
+trainingData <- df.responses[trainingRows, ]
+testData <- df.responses[-trainingRows, ]
+
+options(contrasts = c("contr.treatment", "contr.poly"))
+ologit.fin <- polr(Finances ~ Cluster_1 + Cluster_2+ Cluster_3 + Cluster_4 + Cluster_5, data=trainingData)
+
+predicted.fin <- predict(ologit.fin, testData)  # predict the classes directly
+
+
+table(testData$Finances, predicted.fin)
+
+
+mean(as.character(testData$Finances) == as.character(predicted.fin))  #41% accuracy
+
+
+regfit.finance <- regsubsets(Finances ~ Cluster_1+Cluster_2+
+                            Cluster_3+Cluster_4+
+                            Cluster_5, data=trainingData)
+
+finance.sum<- summary(regfit.finance)
+```
+
+```{r Best Subset Selection Visualization (Finances), fig.align="center", echo=FALSE}
+data <- data.frame(finance.sum$rss, finance.sum$adjr2, finance.sum$cp, finance.sum$bic)
+
+fin.rss <- ggplot(data, aes(x = c(1:5), y = finance.sum$rss)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.min(finance.sum$rss),
+                 y=finance.sum$rss[which.min(finance.sum$rss)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("RSS") +
+  xlab("Model Number")+ theme_bw() + theme(axis.title.x=element_blank())
+
+fin.adjr2<- ggplot(data, aes(x = c(1:5), y = finance.sum$adjr2)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.max(finance.sum$adjr2),
+                 y=finance.sum$adjr2[which.max(finance.sum$adjr2)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("Adjusted R Squared") + theme_bw() + theme(axis.title.x=element_blank())
+
+fin.cp<- ggplot(data, aes(x = c(1:5), y = finance.sum$cp)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.min(finance.sum$cp),
+                 y=finance.sum$cp[which.min(finance.sum$cp)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("Cp") +
+  xlab("Model Number") + theme_bw()
+
+fin.bic<- ggplot(data, aes(x = c(1:5), y = finance.sum$bic)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.min(finance.sum$bic),
+                 y=finance.sum$bic[which.min(finance.sum$bic)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("BIC") +
+  xlab("Model Number")+ theme_bw()
+
+grid.arrange(fin.rss, fin.adjr2, fin.cp, fin.bic, nrow = 2,  top = "Best Subset Selection - Finance")
+```
+
+```{r Best Regression Finance, message=F}
+lm.bestfin <- polr(Finances ~ Cluster_1+Cluster_2,data=trainingData)
+predictedbestFin <- predict(lm.bestfin, testData)  # predict the classes directly
+
+table(testData$Finances, predictedbestFin)
+
+mean(as.character(testData$Finances) == as.character(predictedbestFin)) #39% accuracy with just 2 predictors
+```
+
+```{r Ordinal Logistic Regression - Flying, message=FALSE}
+
+options(contrasts = c("contr.treatment", "contr.poly"))
+ologit.fly <- polr(Flying ~ Cluster_1 + Cluster_2+ Cluster_3 + Cluster_4 + Cluster_5, data=trainingData)
+
+predicted.fly <- predict(ologit.fly, testData)  # predict the classes directly
+
+
+table(testData$Flying, predicted.fly)
+
+
+mean(as.character(testData$Flying) == as.character(predicted.fly))  #46% accuracy
+
+
+regfit.flying <- regsubsets(Flying ~ Cluster_1+Cluster_2+
+                            Cluster_3+Cluster_4+
+                            Cluster_5, data=trainingData)
+
+flying.sum<- summary(regfit.flying)
+```
+
+```{r Best Subset Selection Visualization (Flying), fig.align="center", echo=FALSE}
+data<- data.frame(flying.sum$rss, flying.sum$adjr2, flying.sum$cp, flying.sum$bic)
+fl.rss <- ggplot(data, aes(x = c(1:5), y = flying.sum$rss)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.min(flying.sum$rss),
+                 y=flying.sum$rss[which.min(flying.sum$rss)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("RSS") +
+  xlab("Model Number")+ theme_bw() + theme(axis.title.x=element_blank())
+
+fl.adjr2<- ggplot(data, aes(x = c(1:5), y = flying.sum$adjr2)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.max(flying.sum$adjr2),
+                 y=flying.sum$adjr2[which.max(flying.sum$adjr2)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("Adjusted R Squared") + theme_bw() + theme(axis.title.x=element_blank())
+
+fl.cp<- ggplot(data, aes(x = c(1:5), y = flying.sum$cp)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.min(flying.sum$cp),
+                 y=flying.sum$cp[which.min(flying.sum$cp)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("Cp") +
+  xlab("Model Number") + theme_bw()
+
+fl.bic<- ggplot(data, aes(x = c(1:5), y = flying.sum$bic)) + 
+  geom_line(col="#00AFBB") + 
+  geom_point(aes(x = which.min(flying.sum$bic),
+                 y=flying.sum$bic[which.min(flying.sum$bic)]),
+             colour="#E7B800")+
+  scale_x_discrete(limits = c(1:5)) +
+  ylab("BIC") +
+  xlab("Model Number")+ theme_bw()
+
+grid.arrange(fl.rss, fl.adjr2, fl.cp, fl.bic, nrow = 2, top = "Best Subset Selection - Flying")
+```
+
+```{r Best Regression Flying}
+lm.bestfly <- polr(Flying ~ Cluster_1+Cluster_3+Cluster_4,data=trainingData)
+predictedbestFly <- predict(lm.bestfly, testData)  # predict the classes directly
+
+table(testData$Flying, predictedbestFly)
+
+mean(as.character(testData$Flying) == as.character(predictedbestFly)) #same accuracy with just 3 predictors
+```
+
+
+[1]: https://www.kaggle.com/miroslavsabo/young-people-survey/ "Kaggle"
+[2]: https://stats.stackexchange.com/questions/10/under-what-conditions-should-likert-scales-be-used-as-ordinal-or-interval-data/ "here" 
